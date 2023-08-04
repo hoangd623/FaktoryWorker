@@ -45,14 +45,14 @@ internal class Worker : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Worker is stopping.");
+        _logger.LogInformation("Worker is stopping");
         await base.StopAsync(cancellationToken);
         
         var jobsLeft = _jobsState.JobsStarted.Count;
         if (jobsLeft > 0)
         {
             _logger.LogInformation(
-                "{count} jobs still in progress. Waiting {seconds} seconds to complete.",
+                "{count} jobs still in progress. Waiting {seconds} seconds to complete",
                 _jobsState.JobsStarted.Count, _options.ShutdownTimeoutSeconds);
             await Task.Delay(_options.ShutdownTimeoutSeconds * 1000, cancellationToken);
         }
@@ -64,22 +64,22 @@ internal class Worker : BackgroundService
                 string.Join(',', jobsNotCompleted));
         if(jobsNotCompleted.Count == 0 && jobsLeft > 0)
         {
-            _logger.LogInformation("All {count} in progress jobs completed successfully.", jobsLeft);
+            _logger.LogInformation("All {count} in progress jobs completed successfully", jobsLeft);
         }
         
         await _client.DisposeAsync();
 
-        _logger.LogInformation("Worker has stopped.");
+        _logger.LogInformation("Worker has stopped");
     }
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Worker is starting.");
+        _logger.LogInformation("Worker is starting");
         _logger.LogInformation("WorkerId: {WorkerId}", _options.WorkerId);
-        _logger.LogInformation("Worker is connecting to Faktory.");
+        _logger.LogInformation("Worker is connecting to Faktory");
         await _client.ConnectAsync();
         await _client.HelloAsync();
-        _logger.LogInformation("Worker connected successfully.");
+        _logger.LogInformation("Worker connected successfully");
         _logger.LogInformation("Working...");
         
         while (!cancellationToken.IsCancellationRequested)
@@ -91,7 +91,12 @@ internal class Worker : BackgroundService
                 .ToDictionary(x => x.Key, x => x.Value);
             while (potentiallyHasMoreJobs.Any(x => x.Value == true))
             {
-                if (_jobsState.JobsStarted.Count >= _options.ParallelJobs) continue;
+                if (_jobsState.JobsStarted.Count >= _options.ParallelJobs)
+                {
+                    //beat so server doesn't close connection
+                    await HeartbeatAsync(_client);
+                    continue;
+                }
                 await HeartbeatAsync(_client);
                 await AckOrFailJobs(_client);
 
@@ -139,18 +144,18 @@ internal class Worker : BackgroundService
             {
                 await client.AckJobAsync(jobId);
             }
-            catch (JobNotFoundException e)
+            catch (JobNotFoundException)
             {
                 //OK
             }
-            catch (FaktoryClientException e)
+            catch (FaktoryClientException)
             {
                 //retry once
                 try
                 {
                     await client.AckJobAsync(jobId);
                 }
-                catch (FaktoryClientException exception)
+                catch (FaktoryClientException)
                 {
                     //Throw it back on the queue
                     _jobsState.JobsCompleted.Enqueue(jobId);
@@ -164,18 +169,18 @@ internal class Worker : BackgroundService
             {
                 await client.FailJobAsync(failedJob.JobId, failedJob.Exception);
             }
-            catch (JobNotFoundException e)
+            catch (JobNotFoundException)
             {
                 //OK
             }
-            catch (FaktoryClientException e)
+            catch (FaktoryClientException)
             {
                 //retry once
                 try
                 {
                     await client.FailJobAsync(failedJob.JobId, failedJob.Exception);
                 }
-                catch (FaktoryClientException exception)
+                catch (FaktoryClientException)
                 {
                     //Throw it back on the queue
                     _jobsState.JobsFailed.Enqueue(failedJob);
